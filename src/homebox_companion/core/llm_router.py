@@ -23,6 +23,7 @@ from litellm.integrations.custom_logger import CustomLogger
 from litellm.router import Router
 from loguru import logger
 
+from . import config
 from .persistent_settings import get_fallback_profile
 
 if TYPE_CHECKING:
@@ -126,12 +127,17 @@ _router: Router | None = None
 # Constant for primary model name used in Router configuration
 PRIMARY_MODEL_NAME = "primary"
 
+# Router model_name for the optional chat-only deployment (HBC_CHAT_LLM_MODEL)
+CHAT_MODEL_NAME = "chat"
+
 # Public API
 __all__ = [
     "get_router",
     "invalidate_router",
     "get_primary_model_name",
+    "get_chat_model_name",
     "PRIMARY_MODEL_NAME",
+    "CHAT_MODEL_NAME",
 ]
 
 
@@ -181,11 +187,27 @@ def get_primary_model_name() -> str:
     return PRIMARY_MODEL_NAME
 
 
+def _chat_model_override() -> str:
+    """Return the chat-only model from HBC_CHAT_LLM_MODEL, or "" when unset."""
+    return (config.settings.chat_llm_model or "").strip()
+
+
+def get_chat_model_name() -> str:
+    """Get the Router model_name the chat assistant should call.
+
+    Returns:
+        "chat" when HBC_CHAT_LLM_MODEL is set, otherwise "primary".
+    """
+    return CHAT_MODEL_NAME if _chat_model_override() else PRIMARY_MODEL_NAME
+
+
 def _build_router_from_profiles() -> Router:
     """Build Router from current PRIMARY and FALLBACK profiles.
 
     The Router's model_list is constructed with:
     - "primary" deployment from PRIMARY profile (or env defaults)
+    - "chat" deployment from HBC_CHAT_LLM_MODEL (if set), sharing the primary
+      deployment's API key and base URL
     - "fallback" deployment from FALLBACK profile (if configured)
 
     Returns:
@@ -228,6 +250,18 @@ def _build_router_from_profiles() -> Router:
         f"Router primary deployment: model={primary_creds.model}, profile={primary_creds.profile_name or 'env'}"
     )
 
+    # Optional chat-only deployment: a different (usually cheaper) model on the
+    # same provider credentials as the primary.
+    chat_model = _chat_model_override()
+    if chat_model:
+        chat_params: dict[str, Any] = {"model": chat_model}
+        if primary_creds.api_key:
+            chat_params["api_key"] = primary_creds.api_key
+        if primary_creds.api_base:
+            chat_params["api_base"] = primary_creds.api_base
+        model_list.append({"model_name": CHAT_MODEL_NAME, "litellm_params": chat_params})
+        logger.debug(f"Router chat deployment: model={chat_model}")
+
     # Add fallback deployment if configured
     fallback = get_fallback_profile()
     if fallback:
@@ -241,11 +275,16 @@ def _build_router_from_profiles() -> Router:
         logger.debug(f"Router fallback deployment: model={fallback.model}")
 
     # Configure Router with fallback chain
-    # When calling with model="primary", Router will try primary first,
-    # then fallback on failure
+    # When calling with model="primary" (or "chat"), Router will try that
+    # deployment first, then fallback on failure
+    fallback_chain: list[dict[str, list[str]]] = []
+    if fallback:
+        fallback_chain.append({"primary": ["fallback"]})
+        if chat_model:
+            fallback_chain.append({CHAT_MODEL_NAME: ["fallback"]})
     router = Router(
         model_list=model_list,
-        fallbacks=[{"primary": ["fallback"]}] if fallback else [],
+        fallbacks=fallback_chain,
         num_retries=1,  # Retry once on transient errors before fallback
         retry_after=1,  # Wait 1 second before retry
         allowed_fails=1,  # Put deployment in cooldown after 1 failure

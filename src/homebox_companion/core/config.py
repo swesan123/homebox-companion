@@ -99,6 +99,10 @@ class Settings(BaseSettings):
     llm_api_base: str | None = None
     llm_allow_unsafe_models: bool = False
 
+    # Optional cheaper model for the chat assistant only (HBC_CHAT_LLM_MODEL).
+    # Empty = chat uses the primary model. Reuses the primary API key and base URL.
+    chat_llm_model: str = ""
+
     # Web server configuration
     server_host: str = "0.0.0.0"
     server_port: int = 8000

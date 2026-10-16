@@ -295,6 +295,7 @@ For a quick setup, you only need to provide your OpenAI API key. All other setti
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HBC_LLM_MODEL` | `gpt-5.6-luna` | Model to use. Supported: `gpt-5.6-luna` (recommended), `gpt-5-nano`. |
+| `HBC_CHAT_LLM_MODEL` | – | Optional model for the Chat assistant only (e.g. a cheaper one). Reuses the primary API key and base URL. Must support function calling. Empty = chat uses `HBC_LLM_MODEL`. |
 | `HBC_LLM_API_BASE` | – | Custom API base URL (for proxies or experimental providers) |
 | `HBC_LLM_ALLOW_UNSAFE_MODELS` | `false` | Skip capability validation for unrecognized models |
 | `HBC_LLM_TIMEOUT` | `120` | LLM request timeout in seconds |

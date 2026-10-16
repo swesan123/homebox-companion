@@ -31,7 +31,7 @@ from typing import Any
 from loguru import logger
 
 from homebox_companion.core import config
-from homebox_companion.core.llm_router import get_primary_model_name, get_router
+from homebox_companion.core.llm_router import get_chat_model_name, get_router
 from homebox_companion.core.logging import get_log_level_value
 
 
@@ -313,10 +313,13 @@ class LLMClient:
         will be used for the next request. Useful for logging.
 
         Returns:
-            The resolved model identifier (from PRIMARY profile or env).
+            The resolved model identifier (HBC_CHAT_LLM_MODEL, else PRIMARY profile or env).
         """
         from homebox_companion.core.llm_utils import resolve_llm_credentials
 
+        chat_model = (config.settings.chat_llm_model or "").strip()
+        if chat_model:
+            return chat_model
         creds = resolve_llm_credentials()
         return creds.model or "unknown"
 
@@ -436,7 +439,7 @@ class LLMClient:
         timeout = config.settings.llm_stream_timeout if stream else config.settings.llm_timeout
 
         kwargs: dict[str, Any] = {
-            "model": get_primary_model_name(),
+            "model": get_chat_model_name(),
             "messages": messages,
             "timeout": timeout,
             "stream": stream,
