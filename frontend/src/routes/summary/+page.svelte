@@ -138,6 +138,8 @@
 			return;
 		}
 
+		if (result.intakeWarning) showToast(result.intakeWarning, 'warning');
+
 		// Show appropriate toast based on results
 		if (result.failCount > 0 && result.successCount === 0 && result.partialSuccessCount === 0) {
 			showToast('All items failed to create', 'error');
@@ -169,6 +171,8 @@
 			markSessionExpired();
 			return;
 		}
+
+		if (result.intakeWarning) showToast(result.intakeWarning, 'warning');
 
 		if (result.failCount > 0) {
 			showToast(

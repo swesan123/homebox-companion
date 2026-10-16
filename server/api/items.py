@@ -2,7 +2,7 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
 
@@ -12,13 +12,12 @@ from homebox_companion import (
     HomeboxCompanionError,
     HomeboxGateway,
 )
-from homebox_companion.ai.images import compress_image_for_upload
 from homebox_companion.core import HomeboxAPIError
 from homebox_companion.homebox import ItemCreate
 
-from ..dependencies import get_gateway, get_valid_tag_ids, validate_file_size
+from ..dependencies import get_gateway, get_valid_tag_ids
 from ..schemas.items import BatchCreateRequest
-from ..services.image_processing import run_image_processing
+from ..services.attachments import upload_entity_photo
 
 router = APIRouter()
 
@@ -219,39 +218,74 @@ async def upload_item_attachment(
     item_id: str,
     file: Annotated[UploadFile, File(description="Image file to upload")],
     gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
+    primary: Annotated[bool | None, Form(description="Mark as the primary photo")] = None,
 ) -> dict[str, Any]:
     """Upload an attachment (image) to an existing item."""
-    logger.info(f"Uploading attachment to item: {item_id}")
-    logger.debug(f"File: {file.filename}, content_type: {file.content_type}")
+    return await upload_entity_photo(request, gateway, item_id, file, primary)
 
-    # Validate file size (raises HTTPException if too large)
-    file_bytes = await validate_file_size(file, request.app.state.settings)
 
-    # Log file size for diagnostics - helps identify empty/corrupted uploads
-    file_size = len(file_bytes)
-    logger.debug(f"Received file: {file.filename}, size: {file_size:,} bytes")
-    if file_size == 0:
-        logger.warning(f"Empty file received for item {item_id}: {file.filename}")
-    elif file_size < 1000:
-        logger.warning(f"Suspiciously small file for item {item_id}: {file.filename} ({file_size} bytes)")
+@router.get("/items/by-asset/{asset_id}")
+async def get_item_by_asset_id(
+    asset_id: str,
+    gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
+) -> dict[str, Any]:
+    """Resolve a Homebox asset ID (e.g. ``000-001``) to its item."""
+    logger.debug(f"Resolving asset ID: {asset_id}")
+    try:
+        found = await gateway.get_item_by_asset_id(asset_id)
+    except HomeboxAPIError as e:
+        # The client raises ValueError when the asset list is empty (wrapped by the gateway)
+        if e.context.get("status_code") == 404 or isinstance(e.__cause__, ValueError):
+            raise HTTPException(status_code=404, detail=f"No item found with asset ID {asset_id}") from e
+        raise
+    return await _describe_item(gateway, found["id"], fallback=found)
 
-    filename = file.filename or "image.jpg"
-    mime_type = file.content_type or "image/jpeg"
 
-    max_dimension, jpeg_quality = request.app.state.settings.image_quality_params
-    file_bytes, mime_type = await run_image_processing(
-        compress_image_for_upload, file_bytes, max_dimension, jpeg_quality
-    )
+@router.get("/items/{item_id}")
+async def get_item(
+    item_id: str,
+    gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
+) -> dict[str, Any]:
+    """Fetch a compact description of an item (id, name, asset ID and containing location)."""
+    try:
+        return await _describe_item(gateway, item_id)
+    except HomeboxAPIError as e:
+        if e.context.get("status_code") == 404:
+            raise HTTPException(status_code=404, detail="Item not found") from e
+        raise
 
-    result = await gateway.upload_attachment(
-        item_id=item_id,
-        file_bytes=file_bytes,
-        filename=filename,
-        mime_type=mime_type,
-        attachment_type="photo",
-    )
-    logger.info(f"Successfully uploaded attachment to item {item_id}")
-    return result
+
+async def _describe_item(
+    gateway: HomeboxGateway, item_id: str, fallback: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Build the compact item description used for QR scan resolution.
+
+    ``location_id`` is the nearest ancestor that is a location, so a box stored
+    inside another item still resolves to the room/shelf it lives in. ``parent_id``
+    is the immediate parent, which is an item when the box is nested.
+    """
+    item = await gateway.get_item(item_id)
+    if not item and fallback:
+        item = fallback
+    parent = item.get("parent") or {}
+    location_id: str | None = parent.get("id")
+    location_name: str | None = parent.get("name")
+    try:
+        path = await gateway.get_item_path(item_id)
+    except HomeboxAPIError, HomeboxAuthError:
+        path = []
+    for node in reversed(path):
+        if node.get("id") != item_id and node.get("type") == "location":
+            location_id, location_name = node.get("id"), node.get("name")
+            break
+    return {
+        "id": item.get("id", item_id),
+        "name": item.get("name", ""),
+        "asset_id": item.get("assetId"),
+        "location_id": location_id,
+        "location_name": location_name,
+        "parent_id": parent.get("id"),
+    }
 
 
 @router.get("/items/{item_id}/attachments/{attachment_id}")

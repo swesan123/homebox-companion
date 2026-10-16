@@ -2,7 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { onMount } from 'svelte';
-	import { locations as locationsApi } from '$lib/api';
+	import { items as itemsApi, locations as locationsApi } from '$lib/api';
 	import { ApiError } from '$lib/api/client';
 	import { authStore } from '$lib/stores/auth.svelte';
 	import { locationStore } from '$lib/stores/locations.svelte';
@@ -14,6 +14,7 @@
 	import { getInitPromise } from '$lib/services/bootstrap';
 	import { createLogger } from '$lib/utils/logger';
 	import { resolveQrUrl } from '$lib/utils/qrUrl';
+	import { parseHomeboxQr } from '$lib/utils/homeboxQr';
 	import type { Location } from '$lib/types';
 	import Button from '$lib/components/Button.svelte';
 	import Skeleton from '$lib/components/Skeleton.svelte';
@@ -197,24 +198,35 @@
 			// Resolve shortened URLs (bit.ly, etc.) to their final destination
 			const resolvedUrl = await resolveQrUrl(decodedText);
 
-			// Parse the QR code URL to extract location ID
-			// Expected format: https://homebox.example.com/location/{uuid}
-			const locationIdMatch = resolvedUrl.match(/\/location\/([a-f0-9-]+)(?:\/|$)/i);
+			// Expected formats: {host}/location/{uuid}, {host}/item/{uuid}, {host}/a/{assetId}
+			const target = parseHomeboxQr(resolvedUrl);
 
-			if (!locationIdMatch) {
-				showToast('Invalid QR code. Not a Homebox location.', 'error');
-				isProcessingQr = false;
+			if (!target) {
+				showToast('Invalid QR code. Not a Homebox location, item or asset label.', 'error');
 				return;
 			}
 
-			const locationId = locationIdMatch[1];
+			// A scanned item (or asset tag) is a container such as a box: its items go inside it
+			let parentItem: { id: string; name: string } | null = null;
+			let locationId = target.id;
+			if (target.type !== 'location') {
+				const item =
+					target.type === 'asset'
+						? await itemsApi.getByAssetId(target.id)
+						: await itemsApi.get(target.id);
+				if (!item.location_id) {
+					showToast(`Could not find the location of "${item.name}".`, 'error');
+					return;
+				}
+				parentItem = { id: item.id, name: item.name };
+				locationId = item.location_id;
+			}
 
 			// Fetch location details from API
 			const location = await locationsApi.get(locationId);
 
 			if (!location) {
 				showToast('Location not found in your Homebox.', 'error');
-				isProcessingQr = false;
 				return;
 			}
 
@@ -232,13 +244,15 @@
 			};
 
 			locationNavigator.selectLocation(locationData, locationPath);
+			// Must follow selectLocation: changing location clears the parent item
+			if (parentItem) scanWorkflow.setParentItem(parentItem.id, parentItem.name);
 		} catch (error) {
 			log.error('QR scan error', error);
 			if (error instanceof ApiError) {
 				if (error.status === 401) {
 					showToast('Session expired. Please log in again.', 'error');
 				} else if (error.status === 404) {
-					showToast('Location not found in your Homebox.', 'error');
+					showToast('Not found in your Homebox.', 'error');
 				} else {
 					showToast('Failed to load location. Please try again.', 'error');
 				}

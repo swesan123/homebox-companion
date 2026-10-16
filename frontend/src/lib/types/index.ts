@@ -50,6 +50,18 @@ export interface ItemSummary {
 	thumbnailId?: string | null;
 }
 
+/** Item resolved from a scanned QR code (item UUID or asset ID) */
+export interface ItemLookup {
+	id: string;
+	name: string;
+	asset_id: string | null;
+	/** Nearest ancestor that is a location (where the item physically lives) */
+	location_id: string | null;
+	location_name: string | null;
+	/** Immediate parent, which is an item when the item is nested inside another item */
+	parent_id: string | null;
+}
+
 /** Core item fields shared across all item types */
 export interface ItemCore {
 	name: string;

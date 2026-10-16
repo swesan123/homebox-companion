@@ -18,7 +18,8 @@ import { workflowLogger as log } from '$lib/utils/logger';
 import { CaptureService } from './capture.svelte';
 import { AnalysisService } from './analysis.svelte';
 import { ReviewService } from './review.svelte';
-import { SubmissionService } from './submission.svelte';
+import { SubmissionService, type IntakeTarget } from './submission.svelte';
+import { getConfig } from '$lib/api/settings';
 import type {
 	ScanStateView,
 	DeepReadonly,
@@ -90,6 +91,10 @@ class ScanWorkflow {
 	/** Changes synchronously whenever an analysis is started or invalidated. */
 	private _analysisAttemptId = 0;
 	private retryStartStatuses: Record<number, ImageAnalysisStatus> | null = null;
+
+	/** Photo upload preferences from the server config, loaded on first submit. */
+	private photoPreferences: { containerIntakePhotos: boolean; skipItemPhotos: boolean } | null =
+		null;
 
 	/** Confirmed-item index currently being edited after a failed submission. */
 	private failedItemEditIndex = $state<number | null>(null);
@@ -764,6 +769,8 @@ class ScanWorkflow {
 		partialSuccessCount: number;
 		failCount: number;
 		sessionExpired: boolean;
+		/** Set when the container intake photos could not be attached (items are unaffected) */
+		intakeWarning?: string;
 	}> {
 		const generation = this.contextGeneration;
 		if (!captureSessionScope()) {
@@ -785,11 +792,22 @@ class ScanWorkflow {
 		this._status = 'submitting';
 		this._error = null;
 
+		const prefs = await this.loadPhotoPreferences();
+		if (generation !== this.contextGeneration) {
+			return {
+				success: false,
+				successCount: 0,
+				partialSuccessCount: 0,
+				failCount: 0,
+				sessionExpired: false,
+			};
+		}
+
 		const result = await this.submissionService.submitAll(
 			items,
 			this._locationId,
 			this._parentItemId,
-			options
+			{ ...options, skipItemPhotos: prefs.skipItemPhotos }
 		);
 		if (generation !== this.contextGeneration) return result;
 
@@ -797,6 +815,9 @@ class ScanWorkflow {
 			await this.persistAsync();
 			return result;
 		}
+
+		const intakeWarning = await this.uploadIntakePhotos(prefs.containerIntakePhotos);
+		if (generation !== this.contextGeneration) return { ...result, intakeWarning };
 
 		// Handle results
 		if (result.failCount > 0 && result.successCount === 0 && result.partialSuccessCount === 0) {
@@ -817,7 +838,7 @@ class ScanWorkflow {
 		}
 
 		if (this._status !== 'complete') await this.persistAsync();
-		return result;
+		return { ...result, intakeWarning };
 	}
 
 	/**
@@ -830,6 +851,8 @@ class ScanWorkflow {
 		partialSuccessCount: number;
 		failCount: number;
 		sessionExpired: boolean;
+		/** Set when the container intake photos could not be attached (items are unaffected) */
+		intakeWarning?: string;
 	}> {
 		const generation = this.contextGeneration;
 		if (!captureSessionScope()) {
@@ -849,10 +872,12 @@ class ScanWorkflow {
 
 		this._error = null;
 
+		const prefs = await this.loadPhotoPreferences(true);
 		const result = await this.submissionService.retryFailed(
 			items,
 			this._locationId,
-			this._parentItemId
+			this._parentItemId,
+			{ skipItemPhotos: prefs.skipItemPhotos }
 		);
 		if (generation !== this.contextGeneration) return result;
 
@@ -860,6 +885,10 @@ class ScanWorkflow {
 			await this.persistAsync();
 			return result;
 		}
+
+		// Resumes where an earlier attempt stopped; a no-op once all photos are uploaded
+		const intakeWarning = await this.uploadIntakePhotos(prefs.containerIntakePhotos);
+		if (generation !== this.contextGeneration) return { ...result, intakeWarning };
 
 		// Check if all items are now successful
 		if (this.submissionService.allItemsSuccessful()) {
@@ -871,7 +900,56 @@ class ScanWorkflow {
 		}
 
 		if (this._status !== 'complete') await this.persistAsync();
-		return result;
+		return { ...result, intakeWarning };
+	}
+
+	/**
+	 * Server-side photo preferences. Defaults to off if the config can't be loaded.
+	 * Retries reuse the preferences from the original submission so they start
+	 * immediately instead of waiting on another request.
+	 */
+	private async loadPhotoPreferences(
+		reuse = false
+	): Promise<{ containerIntakePhotos: boolean; skipItemPhotos: boolean }> {
+		if (reuse && this.photoPreferences) return this.photoPreferences;
+		try {
+			const config = await getConfig();
+			this.photoPreferences = {
+				containerIntakePhotos: config.container_intake_photos === true,
+				skipItemPhotos: config.skip_item_photos === true,
+			};
+		} catch (error) {
+			log.warn('Failed to load photo preferences, using defaults', error);
+			return { containerIntakePhotos: false, skipItemPhotos: false };
+		}
+		return this.photoPreferences;
+	}
+
+	/**
+	 * Attach the capture photos to the scanned container once items exist.
+	 * Never blocks item creation: failures are returned as a warning and also
+	 * recorded with the other submission messages.
+	 */
+	private async uploadIntakePhotos(enabled: boolean): Promise<string | undefined> {
+		if (!enabled || !this._locationId) return undefined;
+		const anyCreated = Object.values(this.submissionService.itemStatuses).some(
+			(status) => status === 'success' || status === 'partial_success'
+		);
+		// Images are stored newest first; upload in capture order so photo 1 is the primary
+		const files = this.captureService.images.map((image) => image.file).reverse();
+		if (!anyCreated || files.length === 0) return undefined;
+
+		const target: IntakeTarget = this._parentItemId
+			? { kind: 'item', id: this._parentItemId }
+			: { kind: 'location', id: this._locationId };
+		const outcome = await this.submissionService.uploadIntakePhotos(files, target);
+		if (outcome.complete) return undefined;
+		const warning = outcome.sessionExpired
+			? 'Items were created, but your session expired before the photos were attached to the container'
+			: outcome.error;
+		if (!warning) return undefined;
+		this.submissionService.lastErrors = [...this.submissionService.lastErrors, warning];
+		return warning;
 	}
 
 	/** Check if there are any failed items */

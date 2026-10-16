@@ -4,12 +4,13 @@
  * Responsibilities:
  * - Creating items in Homebox
  * - Uploading attachments (images, thumbnails)
+ * - Uploading the capture photos once to the scanned container (intake photos)
  * - Progress tracking
  * - Retry failed items
  * - Submission result tracking
  */
 
-import { items as itemsApi } from '$lib/api/index';
+import { items as itemsApi, locations as locationsApi } from '$lib/api/index';
 import { ApiError } from '$lib/api/client';
 import { withRetry } from '$lib/utils/retry';
 import { workflowLogger as log } from '$lib/utils/logger';
@@ -36,6 +37,29 @@ export interface SubmitResult {
 	errors: string[];
 }
 
+/** Container that receives the intake photos: the parent item if set, else the location. */
+export interface IntakeTarget {
+	kind: 'item' | 'location';
+	id: string;
+}
+
+export interface IntakeResult {
+	/** True when every photo is on the container (now or from an earlier attempt) */
+	complete: boolean;
+	/** User-facing warning when the upload could not finish */
+	error?: string;
+	sessionExpired?: boolean;
+}
+
+/** e.g. 20260315-142501: sortable and filename safe */
+function intakeStamp(date: Date): string {
+	const pad = (value: number) => String(value).padStart(2, '0');
+	return (
+		`${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-` +
+		`${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+	);
+}
+
 // =============================================================================
 // SUBMISSION SERVICE CLASS
 // =============================================================================
@@ -56,6 +80,18 @@ export class SubmissionService {
 	/** Tracks created item IDs (by submission index) for parent picker */
 	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- Private non-reactive map, cleared each submission
 	private createdItemIds = new Map<number, string>();
+
+	/**
+	 * Number of intake photos already on the container. Persisted so a retry or
+	 * recovered session resumes instead of uploading the same photos again.
+	 */
+	intakeUploadedCount = $state(0);
+
+	/** Fixed per submission so retried uploads keep one consistent file naming */
+	private intakeStampValue: string | null = null;
+
+	/** When true, created items get no per-item photo attachments */
+	private skipItemPhotos = false;
 
 	/** Abort controller for cancellable operations */
 	private abortController: AbortController | null = null;
@@ -262,7 +298,9 @@ export class SubmissionService {
 				const createdItem = response.created[0];
 
 				if (createdItem?.id) {
-					const uploadResult = await this.uploadAttachments(createdItem.id, confirmedItem, signal);
+					const uploadResult = this.skipItemPhotos
+						? { primaryFailed: false, additionalFailed: false }
+						: await this.uploadAttachments(createdItem.id, confirmedItem, signal);
 
 					// If primary image failed, delete the created item and mark as failed
 					if (uploadResult.primaryFailed) {
@@ -381,12 +419,13 @@ export class SubmissionService {
 	 * @param locationId - Target location ID
 	 * @param parentId - Optional parent item ID (for sub-items)
 	 * @param options.validateAuth - If true, validate auth token before submitting (default: true)
+	 * @param options.skipItemPhotos - If true, don't upload per-item photos (default: false)
 	 */
 	async submitAll(
 		items: ConfirmedItem[],
 		locationId: string | null,
 		parentId: string | null,
-		options?: { validateAuth?: boolean }
+		options?: { validateAuth?: boolean; skipItemPhotos?: boolean }
 	): Promise<SubmitResult> {
 		const result: SubmitResult = {
 			success: false,
@@ -410,6 +449,8 @@ export class SubmissionService {
 		}
 
 		this.abortController = new AbortController();
+
+		this.skipItemPhotos = options?.skipItemPhotos === true;
 
 		// Clear created item IDs from previous submissions
 		this.createdItemIds.clear();
@@ -515,11 +556,13 @@ export class SubmissionService {
 	 * @param items - Full array of confirmed items (uses itemStatuses to find failures)
 	 * @param locationId - Target location ID
 	 * @param parentId - Optional parent item ID (for sub-items)
+	 * @param options.skipItemPhotos - If true, don't upload per-item photos (default: false)
 	 */
 	async retryFailed(
 		items: ConfirmedItem[],
 		locationId: string | null,
-		parentId: string | null
+		parentId: string | null,
+		options?: { skipItemPhotos?: boolean }
 	): Promise<SubmitResult> {
 		const result: SubmitResult = {
 			success: false,
@@ -545,6 +588,7 @@ export class SubmissionService {
 			return result;
 		}
 
+		this.skipItemPhotos = options?.skipItemPhotos === true;
 		this.abortController = new AbortController();
 		const signal = this.abortController?.signal;
 
@@ -605,6 +649,77 @@ export class SubmissionService {
 			result.errors.push(`Retry failed: ${errorMsg}`);
 			this.lastErrors = result.errors;
 			return result;
+		} finally {
+			this.abortController = null;
+		}
+	}
+
+	/**
+	 * Upload the capture photos once to the scanned container.
+	 *
+	 * Non-fatal by design: the items already exist, so failures come back as a
+	 * warning instead of throwing. Progress is tracked per photo, so calling this
+	 * again after a failure only uploads the photos that are still missing.
+	 * The first photo is marked primary so it becomes the container thumbnail.
+	 */
+	async uploadIntakePhotos(files: File[], target: IntakeTarget): Promise<IntakeResult> {
+		if (files.length === 0 || this.intakeUploadedCount >= files.length) {
+			return { complete: true };
+		}
+		if (!hasToken()) {
+			return { complete: false, sessionExpired: true };
+		}
+
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- One-off timestamp, not reactive state
+		this.intakeStampValue ??= intakeStamp(new Date());
+		this.abortController = new AbortController();
+		const signal = this.abortController.signal;
+		this.progress = {
+			current: this.intakeUploadedCount,
+			total: files.length,
+			message: 'Uploading photos to container...',
+		};
+
+		try {
+			while (this.intakeUploadedCount < files.length) {
+				const index = this.intakeUploadedCount;
+				const source = files[index];
+				const file = new File([source], `intake-${this.intakeStampValue}-${index + 1}.jpg`, {
+					type: source.type || 'image/jpeg',
+				});
+				const options = { signal, primary: index === 0 };
+				await withRetry(
+					() =>
+						target.kind === 'item'
+							? itemsApi.uploadAttachment(target.id, file, options)
+							: locationsApi.uploadAttachment(target.id, file, options),
+					{
+						maxAttempts: 3,
+						onRetry: (attempt) => log.debug(`Retrying intake photo upload (attempt ${attempt})`),
+					}
+				);
+				this.intakeUploadedCount = index + 1;
+				this.progress = {
+					current: this.intakeUploadedCount,
+					total: files.length,
+					message: 'Uploading photos to container...',
+				};
+			}
+			return { complete: true };
+		} catch (error) {
+			if (error instanceof ApiError && error.status === 401) {
+				return { complete: false, sessionExpired: true };
+			}
+			if (signal.aborted || (error instanceof Error && error.name === 'AbortError')) {
+				return { complete: false };
+			}
+			log.error('Failed to upload intake photos to container', error);
+			const missing = files.length - this.intakeUploadedCount;
+			const where = target.kind === 'item' ? 'container item' : 'location';
+			return {
+				complete: false,
+				error: `Items were created, but ${missing} of ${files.length} photo(s) could not be attached to the ${where}`,
+			};
 		} finally {
 			this.abortController = null;
 		}
@@ -694,16 +809,29 @@ export class SubmissionService {
 			itemStatuses: { ...this.itemStatuses },
 			createdItemIds: Object.fromEntries(this.createdItemIds),
 			lastErrors: [...this.lastErrors],
+			intakeUploadedCount: this.intakeUploadedCount,
+			intakeStamp: this.intakeStampValue,
 		};
 	}
 
-	restore(snapshot: ReturnType<SubmissionService['snapshot']>): void {
+	restore(
+		snapshot: Omit<
+			ReturnType<SubmissionService['snapshot']>,
+			'intakeUploadedCount' | 'intakeStamp'
+		> &
+			Partial<
+				Pick<ReturnType<SubmissionService['snapshot']>, 'intakeUploadedCount' | 'intakeStamp'>
+			>
+	): void {
 		this.itemStatuses = { ...snapshot.itemStatuses };
 		this.createdItemIds.clear();
 		for (const [index, id] of Object.entries(snapshot.createdItemIds)) {
 			this.createdItemIds.set(Number(index), id);
 		}
 		this.lastErrors = [...snapshot.lastErrors];
+		// Absent in drafts saved before intake photos existed
+		this.intakeUploadedCount = snapshot.intakeUploadedCount ?? 0;
+		this.intakeStampValue = snapshot.intakeStamp ?? null;
 	}
 
 	/** Reset all submission state */
@@ -718,6 +846,8 @@ export class SubmissionService {
 		this.lastResult = null;
 		this.lastErrors = [];
 		this.createdItemIds.clear();
+		this.intakeUploadedCount = 0;
+		this.intakeStampValue = null;
 	}
 
 	// =========================================================================

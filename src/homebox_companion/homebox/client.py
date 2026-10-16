@@ -1268,22 +1268,26 @@ class HomeboxClient:
         filename: str,
         mime_type: str = "image/jpeg",
         attachment_type: str = "photo",
+        primary: bool | None = None,
     ) -> dict[str, Any]:
-        """Upload an attachment (image) to an item.
+        """Upload an attachment (image) to an item or location entity.
 
         Args:
             token: The bearer token from login.
-            item_id: The ID of the item to attach to.
+            item_id: The ID of the entity to attach to.
             file_bytes: The file content as bytes.
             filename: Name for the uploaded file.
             mime_type: MIME type of the file.
             attachment_type: Type of attachment (default: "photo").
+            primary: Mark as the entity's primary photo. Only sent when set.
 
         Returns:
             The attachment response dictionary (raw API response).
         """
         files = {"file": (filename, file_bytes, mime_type)}
         data = {"type": attachment_type, "name": filename}
+        if primary is not None:
+            data["primary"] = "true" if primary else "false"
         response = await self.client.post(
             f"{self.base_url}/entities/{item_id}/attachments",
             headers=self._raw_auth_headers(token),

@@ -357,3 +357,68 @@ async def test_logout_invalidates_token(homebox_api_url: str, homebox_credential
         # Token should now be invalidated — using it should fail
         with pytest.raises((HomeboxAuthError, HomeboxAPIError)):
             await client.list_locations(token)
+
+
+@pytest.mark.asyncio
+async def test_upload_photo_to_location_honours_primary(
+    homebox_client: HomeboxClient,
+    homebox_auth: HomeboxAuth,
+    cleanup_locations: list[str],
+    single_item_single_image_path,
+    single_item_multi_image_1_path,
+) -> None:
+    """Locations are entities in 0.26, so they accept photos; a later primary=True upload takes over."""
+    client = homebox_client
+    token = homebox_auth.token
+
+    location = await client.create_location(token=token, name="Intake photo location")
+    cleanup_locations.append(location["id"])
+
+    # Homebox answers with the updated entity, not the attachment itself.
+    for filename, path, primary in (
+        ("intake-1.jpg", single_item_single_image_path, False),
+        ("intake-2.jpg", single_item_multi_image_1_path, True),
+    ):
+        await client.upload_attachment(
+            token, location["id"], path.read_bytes(), filename, "image/jpeg", "photo", primary=primary
+        )
+
+    fetched = await client.get_location(token, location["id"])
+    attachments = fetched["attachments"]
+    assert len(attachments) == 2
+    assert all(attachment["type"] == "photo" for attachment in attachments)
+    primaries = [attachment for attachment in attachments if attachment.get("primary")]
+    assert len(primaries) == 1
+    primary_photo = primaries[0]
+
+    content, content_type = await client.get_attachment(token, location["id"], primary_photo["id"])
+    assert content == single_item_multi_image_1_path.read_bytes()
+    assert content_type.startswith("image/jpeg")
+
+
+@pytest.mark.asyncio
+async def test_asset_lookup_and_path_identify_container_location(
+    homebox_client: HomeboxClient,
+    homebox_auth: HomeboxAuth,
+    cleanup_items: list[str],
+    cleanup_locations: list[str],
+) -> None:
+    """Asset resolution and the entity path expose what the container intake route relies on."""
+    client = homebox_client
+    token = homebox_auth.token
+
+    location = await client.create_location(token=token, name="Asset lookup location")
+    cleanup_locations.append(location["id"])
+    box = await client.create_item(token, ItemCreate(name="Asset lookup box", quantity=1, parent_id=location["id"]))
+    cleanup_items.append(box["id"])
+    await client.ensure_asset_ids(token)
+
+    fetched = await client.get_item(token, box["id"])
+    assert fetched["assetId"]
+    assert fetched["parent"]["id"] == location["id"]
+
+    found = await client.get_item_by_asset_id(token, fetched["assetId"])
+    assert found["id"] == box["id"]
+
+    path = await client.get_item_path(token, box["id"])
+    assert any(node["id"] == location["id"] and node["type"] == "location" for node in path)

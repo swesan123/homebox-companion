@@ -4,7 +4,7 @@
 
 import { request, requestFormData, requestBlobUrl, type BlobUrlResult } from './client';
 import { apiLogger as log } from '../utils/logger';
-import type { BatchCreateRequest, BatchCreateResponse, ItemSummary } from '../types';
+import type { BatchCreateRequest, BatchCreateResponse, ItemLookup, ItemSummary } from '../types';
 
 export type { BlobUrlResult };
 
@@ -14,6 +14,8 @@ export interface CreateOptions {
 
 export interface UploadOptions {
 	signal?: AbortSignal;
+	/** Mark the photo as the entity's primary photo */
+	primary?: boolean;
 }
 
 export interface ItemUpdateData {
@@ -26,6 +28,14 @@ export interface ItemUpdateData {
 export const items = {
 	list: (locationId?: string, signal?: AbortSignal) =>
 		request<ItemSummary[]>(`/items${locationId ? `?location_id=${locationId}` : ''}`, { signal }),
+
+	/** Fetch an item (e.g. a box scanned by its item QR code) with its containing location. */
+	get: (itemId: string, signal?: AbortSignal) =>
+		request<ItemLookup>(`/items/${itemId}`, { signal }),
+
+	/** Resolve a Homebox asset ID such as `000-001` to its item. */
+	getByAssetId: (assetId: string, signal?: AbortSignal) =>
+		request<ItemLookup>(`/items/by-asset/${encodeURIComponent(assetId)}`, { signal }),
 
 	create: (data: BatchCreateRequest, options: CreateOptions = {}) =>
 		request<BatchCreateResponse>('/items', {
@@ -60,6 +70,7 @@ export const items = {
 
 		const formData = new FormData();
 		formData.append('file', file);
+		if (options.primary !== undefined) formData.append('primary', String(options.primary));
 		return requestFormData<unknown>(`/items/${itemId}/attachments`, formData, {
 			errorMessage: 'Failed to upload attachment',
 			signal: options.signal,

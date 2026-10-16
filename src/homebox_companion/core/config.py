@@ -32,6 +32,9 @@ Environment Variables:
     HBC_CHAT_APPROVAL_TIMEOUT: Seconds before pending approvals expire (default: 300)
     HBC_PRINT_ENABLED: Enable the print label button in the UI (default: false).
         Requires HBOX_LABEL_MAKER_PRINT_COMMAND to be configured on the Homebox server.
+    HBC_CONTAINER_INTAKE_PHOTOS: After items are created, upload the captured photos once
+        to the scanned container (parent item or location) (default: true)
+    HBC_SKIP_ITEM_PHOTOS: Don't upload per-item photos to newly created items (default: false)
 
 AI Output Customization env vars (HBC_AI_*) are handled separately in
 field_preferences.py via FieldPreferencesDefaults.
@@ -148,6 +151,10 @@ class Settings(BaseSettings):
 
     # Label printing configuration
     print_enabled: bool = False  # Enable server-side label printing via Homebox labelmaker
+
+    # Container intake photos
+    container_intake_photos: bool = True  # Attach the capture photos to the scanned container once
+    skip_item_photos: bool = False  # Don't attach per-item photos to newly created items
 
     @field_validator("homebox_api_key", mode="before")
     @classmethod

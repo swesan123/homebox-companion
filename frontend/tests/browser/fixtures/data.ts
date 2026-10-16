@@ -7,7 +7,10 @@ import type {
 
 export type AuthMode = ConfigResponse['auth_mode'];
 
-export const config = (auth_mode: AuthMode = 'api_key'): ConfigResponse => ({
+export const config = (
+	auth_mode: AuthMode = 'api_key',
+	overrides: Partial<ConfigResponse> = {}
+): ConfigResponse => ({
 	auth_mode,
 	is_demo_mode: false,
 	demo_mode_explicit: false,
@@ -19,6 +22,9 @@ export const config = (auth_mode: AuthMode = 'api_key'): ConfigResponse => ({
 	capture_max_images: 10,
 	capture_max_file_size_mb: 20,
 	print_enabled: false,
+	container_intake_photos: false,
+	skip_item_photos: false,
+	...overrides,
 });
 
 export const groups = () => [

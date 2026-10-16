@@ -95,6 +95,9 @@ export interface StoredSession {
 		itemStatuses: Record<number, ItemSubmissionStatus>;
 		createdItemIds: Record<number, string>;
 		lastErrors: string[];
+		// Optional for drafts saved before intake photos existed.
+		intakeUploadedCount?: number;
+		intakeStamp?: string | null;
 	};
 }
 

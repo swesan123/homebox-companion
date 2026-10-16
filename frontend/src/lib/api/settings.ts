@@ -124,6 +124,10 @@ export interface ConfigResponse {
 	capture_max_images: number;
 	capture_max_file_size_mb: number;
 	print_enabled: boolean;
+	/** Upload the capture photos once to the scanned container after items are created */
+	container_intake_photos: boolean;
+	/** Skip uploading per-item photos to newly created items */
+	skip_item_photos: boolean;
 }
 
 export const getConfig = () => request<ConfigResponse>('/config');

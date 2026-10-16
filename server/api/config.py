@@ -22,6 +22,8 @@ class ConfigResponse(BaseModel):
     capture_max_file_size_mb: int
     print_enabled: bool
     auth_mode: str
+    container_intake_photos: bool
+    skip_item_photos: bool
 
 
 @router.get("/config", response_model=ConfigResponse)
@@ -44,4 +46,6 @@ async def get_config(request: Request) -> ConfigResponse:
         capture_max_file_size_mb=app_settings.capture_max_file_size_mb,
         print_enabled=app_settings.print_enabled,
         auth_mode=app_settings.auth_mode,
+        container_intake_photos=app_settings.container_intake_photos,
+        skip_item_photos=app_settings.skip_item_photos,
     )

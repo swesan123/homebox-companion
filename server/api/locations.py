@@ -4,13 +4,14 @@ import asyncio
 import re
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from loguru import logger
 
 from homebox_companion import HomeboxGateway
 
 from ..dependencies import get_gateway
 from ..schemas.locations import LocationCreate, LocationUpdate
+from ..services.attachments import upload_entity_photo
 
 router = APIRouter()
 
@@ -143,3 +144,15 @@ async def update_location(
         description=data.description,
         parent_id=data.parent_id,
     )
+
+
+@router.post("/locations/{location_id}/attachments")
+async def upload_location_attachment(
+    request: Request,
+    location_id: str,
+    file: Annotated[UploadFile, File(description="Image file to upload")],
+    gateway: Annotated[HomeboxGateway, Depends(get_gateway)],
+    primary: Annotated[bool | None, Form(description="Mark as the primary photo")] = None,
+) -> dict[str, Any]:
+    """Upload an attachment (image) to an existing location."""
+    return await upload_entity_photo(request, gateway, location_id, file, primary)

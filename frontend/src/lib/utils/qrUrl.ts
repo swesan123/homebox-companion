@@ -13,7 +13,7 @@ import { createLogger } from '$lib/utils/logger';
 const log = createLogger({ prefix: 'QrUrl' });
 
 /** Patterns that indicate a direct Homebox URL (no resolution needed) */
-const HOMEBOX_PATTERNS = [/\/location\/[a-f0-9-]+/i, /\/a\/[^\s/]+/];
+const HOMEBOX_PATTERNS = [/\/location\/[a-f0-9-]+/i, /\/item\/[a-f0-9-]+/i, /\/a\/[^\s/]+/];
 
 /**
  * Resolve a QR code URL, following redirects if needed.
