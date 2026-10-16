@@ -176,7 +176,9 @@
 	</div>
 
 	<!-- Spacer for fixed header -->
-	<div class="pt-safe h-14 shrink-0"></div>
+	<div class="shrink-0 pt-safe">
+		<div class="h-14"></div>
+	</div>
 
 	<!-- Mobile collection selector (below header, above content) -->
 	{#if isAuthenticated && collectionStore.hasMultiple}
@@ -213,7 +215,7 @@
 		<div
 			class="fixed z-40 flex items-center justify-center gap-2 border-t border-warning/30 bg-warning/20 px-4 py-3 text-body-sm text-warning-500 inset-x-0 {isAuthenticated
 				? 'bottom-nav-offset'
-				: 'bottom-0'}"
+				: 'bottom-0 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]'}"
 		>
 			<WifiOff size={16} strokeWidth={2} />
 			<span>You're offline. Some features may not work.</span>
@@ -223,7 +225,7 @@
 	<!-- Footer with version - only shown on login page (not authenticated) -->
 	{#if !isAuthenticated}
 		<footer
-			class="sticky bottom-0 mt-auto flex items-center justify-center gap-3 bg-neutral-950 py-3 text-center text-caption text-neutral-500"
+			class="sticky bottom-0 mt-auto flex items-center justify-center gap-3 bg-neutral-950 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] text-center text-caption text-neutral-500"
 		>
 			{#if appVersion}
 				<span>v{appVersion}</span>

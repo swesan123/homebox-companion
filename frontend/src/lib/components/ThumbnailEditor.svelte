@@ -436,7 +436,7 @@
 		event.preventDefault();
 		onClose();
 	}}
-	class="m-0 max-h-none max-w-none size-full backdrop:bg-transparent fixed inset-0 z-modal flex items-start justify-center overflow-y-auto bg-neutral-950/80 p-4 sm:p-8"
+	class="m-0 max-h-none max-w-none size-full backdrop:bg-transparent fixed inset-0 z-modal flex items-start justify-center overflow-y-auto bg-neutral-950/80 p-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))] sm:p-8"
 >
 	<div
 		class="my-auto w-full max-w-lg rounded-2xl border border-neutral-700 bg-neutral-900 shadow-xl sm:my-8"

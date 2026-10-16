@@ -35,7 +35,7 @@
 
 {#if toasts.length > 0}
 	<div
-		class="pointer-events-none fixed top-4 z-50 flex flex-col gap-2 md:left-auto md:right-4 md:w-96 inset-x-4"
+		class="pointer-events-none fixed top-[calc(1rem+env(safe-area-inset-top,0px))] z-50 flex flex-col gap-2 md:left-auto md:right-4 md:w-96 inset-x-4"
 	>
 		{#each toasts as toast (toast.id)}
 			<div

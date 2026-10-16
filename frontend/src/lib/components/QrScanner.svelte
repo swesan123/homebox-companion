@@ -333,7 +333,7 @@
 		event.preventDefault();
 		handleClose();
 	}}
-	class="fixed inset-0 z-overlay m-0 flex max-h-none max-w-none flex-col overflow-y-auto bg-neutral-950 p-0 size-full"
+	class="fixed inset-0 z-overlay m-0 flex max-h-none max-w-none flex-col overflow-y-auto bg-neutral-950 px-0 pt-0 pb-safe size-full"
 >
 	<input
 		bind:this={fileInput}
@@ -345,7 +345,9 @@
 	/>
 
 	<!-- Header -->
-	<div class="flex items-center justify-between bg-neutral-950/80 p-4">
+	<div
+		class="flex items-center justify-between bg-neutral-950/80 px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-4"
+	>
 		<h2 class="font-semibold text-neutral-100">{title}</h2>
 		<button
 			type="button"

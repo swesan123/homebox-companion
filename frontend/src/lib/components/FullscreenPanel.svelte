@@ -52,11 +52,13 @@
 	<dialog
 		use:modalDialog
 		aria-labelledby={titleId}
-		class="fixed inset-0 z-modal m-0 flex max-h-none max-w-none flex-col bg-neutral-950 p-0 backdrop:bg-transparent size-full"
+		class="fixed inset-0 z-modal m-0 flex max-h-none max-w-none flex-col bg-neutral-950 px-0 pt-0 pb-safe backdrop:bg-transparent size-full"
 		oncancel={handleCancel}
 	>
 		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-neutral-700 bg-neutral-900 p-4">
+		<div
+			class="flex items-center justify-between border-b border-neutral-700 bg-neutral-900 px-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-4"
+		>
 			<div class="flex items-center gap-3">
 				{#if icon}
 					{@render icon()}

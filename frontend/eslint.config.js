@@ -83,6 +83,8 @@ export default [
 	// Start typed linting with promise safety in application TypeScript.
 	{
 		files: ['src/**/*.ts'],
+		// Excluded from tsconfig (SvelteKit service worker uses webworker libs).
+		ignores: ['src/service-worker.ts'],
 		languageOptions: {
 			parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
 		},
