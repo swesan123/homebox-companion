@@ -315,23 +315,6 @@
 				</details>
 			{/if}
 		</div>
-
-		<!-- Copy button (appears on hover for all messages) -->
-		{#if message.content && !message.isStreaming}
-			<button
-				class="absolute -top-1 rounded-md p-1.5 [@media(hover:hover)]:opacity-0 focus-visible:opacity-100 backdrop-blur-sm transition-all group-hover:opacity-100 {isUser
-					? '-right-1 bg-primary-700/80 text-primary-200 hover:bg-primary-600 hover:text-neutral-100'
-					: '-left-1 bg-neutral-700/80 text-neutral-400 hover:bg-neutral-600 hover:text-neutral-200'}"
-				onclick={handleCopy}
-				aria-label="Copy message"
-			>
-				{#if copySuccess}
-					<Check class="text-success-500" size={14} />
-				{:else}
-					<Copy size={14} />
-				{/if}
-			</button>
-		{/if}
 	</div>
 
 	<div class="chat-meta">
@@ -343,6 +326,20 @@
 		</time>
 		{#if !isUser && message.tokenUsage}
 			<span>{message.tokenUsage.total} tokens</span>
+		{/if}
+		<!-- Copy button: lives in the meta row so it never overlaps bubble text -->
+		{#if message.content && !message.isStreaming}
+			<button
+				class="rounded-md p-1 text-neutral-500 transition-all hover:bg-neutral-700/60 hover:text-neutral-200 focus-visible:opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-100"
+				onclick={handleCopy}
+				aria-label="Copy message"
+			>
+				{#if copySuccess}
+					<Check class="text-success-500" size={14} />
+				{:else}
+					<Copy size={14} />
+				{/if}
+			</button>
 		{/if}
 	</div>
 </div>
