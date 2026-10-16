@@ -215,6 +215,23 @@ Homebox Companion uses [LiteLLM](https://docs.litellm.ai/) as a Python library t
 </details>
 
 <details>
+<summary>Google Gemini</summary>
+
+Gemini works through Google AI Studio with an API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Use the LiteLLM `gemini/` prefix. LiteLLM reports vision and structured-output support for these models, so no unsafe flag is needed:
+
+- `gemini/gemini-4-argon` – Flagship reasoning model with strong vision accuracy
+- `gemini/gemini-3.8-flash` – Faster and cheaper; a good fallback profile
+
+```bash
+HBC_LLM_API_KEY=your-google-ai-studio-key
+HBC_LLM_MODEL=gemini/gemini-4-argon
+```
+
+Gemini does not accept `minimal` thinking. Companion does not set a reasoning level, so the defaults apply. See [`deploy/`](deploy/README.md) for a full Homebox + Companion + Gemini stack.
+
+</details>
+
+<details>
 <summary>Using Other Providers (Experimental)</summary>
 
 You can try other LiteLLM-compatible providers at your own risk. The app checks if your chosen model supports the required capabilities using LiteLLM's API:
@@ -234,6 +251,7 @@ Model names are passed directly to LiteLLM. Use the exact names from LiteLLM's d
 Common examples:
 - OpenAI: `gpt-4o`, `gpt-4o-mini`, `gpt-5.6-luna`
 - Anthropic: `claude-sonnet-4-5`, `claude-3-5-sonnet-20241022`
+- Google: `gemini/gemini-4-argon`, `gemini/gemini-3.8-flash`
 
 > **Note:** Model names must exactly match LiteLLM's expected format. Typos or incorrect formats will cause errors. Check [LiteLLM's provider documentation](https://docs.litellm.ai/docs/providers) for the correct model names.
 

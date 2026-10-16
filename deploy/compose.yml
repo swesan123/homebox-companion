@@ -1,0 +1,52 @@
+# Homebox + Homebox Companion stack.
+# Usage: cp .env.example .env, edit it, then `docker compose up -d --build` from this directory.
+# Companion is built from this checkout (../Dockerfile) so fork changes are included.
+
+name: homebox-stack
+
+services:
+  homebox:
+    image: ghcr.io/sysadminsmedia/homebox:0.26.2
+    container_name: homebox
+    restart: unless-stopped
+    environment:
+      # Required by Homebox 0.26 to hash API keys. Keep it stable; changing it invalidates existing keys.
+      - HBOX_AUTH_API_KEY_PEPPER=${HBOX_AUTH_API_KEY_PEPPER:?set HBOX_AUTH_API_KEY_PEPPER in .env}
+      # Leave true for first-run account creation, then set to false in .env and `docker compose up -d`.
+      - HBOX_OPTIONS_ALLOW_REGISTRATION=${HBOX_OPTIONS_ALLOW_REGISTRATION:-true}
+      # Max upload size in MB (Homebox default is 10); phone photos can exceed that.
+      - HBOX_WEB_MAX_UPLOAD_SIZE=${HBOX_WEB_MAX_UPLOAD_SIZE:-50}
+    volumes:
+      - homebox-data:/data
+    ports:
+      - "7745:7745"
+    networks:
+      - stack
+
+  companion:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: homebox-companion
+    restart: unless-stopped
+    # .env also carries HBOX_* values; Companion ignores them.
+    env_file: .env
+    environment:
+      # Internal service URL; users reach Homebox via HBC_LINK_BASE_URL.
+      - HBC_HOMEBOX_URL=http://homebox:7745
+    volumes:
+      # settings.yaml (LLM profiles, UI settings) lives in /app/data.
+      - companion-data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - homebox
+    networks:
+      - stack
+
+volumes:
+  homebox-data:
+  companion-data:
+
+networks:
+  stack:
